@@ -1,5 +1,5 @@
 ---
-description: Watch a video (URL or local path). Downloads with yt-dlp, extracts frames with ffmpeg, transcribes from captions or Whisper, and answers questions about what's in the video.
+description: Watch a video (URL or local path). Downloads with yt-dlp, extracts frames with ffmpeg, transcribes from captions or Whisper, writes a clean transcript.md, and answers questions about what's in the video.
 argument-hint: <video-url-or-path> [question]
 allowed-tools: [Bash, Read, AskUserQuestion]
 ---

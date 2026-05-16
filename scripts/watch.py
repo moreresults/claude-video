@@ -145,6 +145,21 @@ def main() -> int:
 
     info = dl.get("info") or {}
 
+    transcript_md_path: Path | None = None
+    if transcript_text:
+        transcript_md_path = work / "transcript.md"
+        md_lines = ["# Transcript", ""]
+        if info.get("title"):
+            md_lines.append(f"**Title:** {info['title']}")
+        if info.get("uploader"):
+            md_lines.append(f"**Uploader:** {info['uploader']}")
+        md_lines.append(f"**Duration:** {format_time(full_duration)}")
+        md_lines.append(f"**Source:** {transcript_source or 'captions'}")
+        if focused:
+            md_lines.append(f"**Range:** {format_time(effective_start)} → {format_time(effective_end)}")
+        md_lines.extend(["", "---", ""])
+        transcript_md_path.write_text("\n".join(md_lines) + "\n" + transcript_text + "\n", encoding="utf-8")
+
     print()
     print("# watch: video report")
     print()
@@ -170,6 +185,8 @@ def main() -> int:
             f"- **Transcript:** {len(transcript_segments)} segments{in_range} "
             f"(via {transcript_source or 'captions'})"
         )
+        if transcript_md_path:
+            print(f"- **Transcript file:** `{transcript_md_path}`")
     else:
         print("- **Transcript:** none available")
 
