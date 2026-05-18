@@ -7,6 +7,7 @@ then Reads each frame path to see the video.
 from __future__ import annotations
 
 import argparse
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -17,6 +18,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 from download import download, is_url  # noqa: E402
 from frames import MAX_FPS, auto_fps, auto_fps_focus, extract, format_time, get_metadata, parse_time  # noqa: E402
+from safe_name import DEFAULT_UCID_PREFIX, build_save_dir_name, next_ucid  # noqa: E402
 from transcribe import filter_range, format_transcript, parse_vtt  # noqa: E402
 from whisper import load_api_key, transcribe_video  # noqa: E402
 
@@ -29,10 +31,34 @@ def main() -> int:
     ap.add_argument("source", help="Video URL or local file path")
     ap.add_argument("--max-frames", type=int, default=80, help="Cap on frame count (default 80, hard max 100)")
     ap.add_argument("--resolution", type=int, default=512, help="Frame width in pixels (default 512)")
+    ap.add_argument(
+        "--hires-resolution", type=int, default=1600,
+        help="Hi-res (publication-grade) frame width in pixels (default 1600, never upscales beyond source)",
+    )
     ap.add_argument("--fps", type=float, default=None, help="Override auto-fps")
     ap.add_argument("--start", type=str, default=None, help="Range start (SS, MM:SS, or HH:MM:SS)")
     ap.add_argument("--end", type=str, default=None, help="Range end (SS, MM:SS, or HH:MM:SS)")
     ap.add_argument("--out-dir", type=str, default=None, help="Working directory (default: tmp)")
+    ap.add_argument(
+        "--save-dir",
+        type=str,
+        default=None,
+        help=(
+            "Base directory under which a UCID-named subfolder "
+            "'<PREFIX>-NNNN YYYY-MM-DD ShortTitle' (sanitised) is created. "
+            "The UCID auto-increments by scanning existing folders under "
+            "--save-dir. Mutually exclusive with --out-dir."
+        ),
+    )
+    ap.add_argument(
+        "--ucid-prefix",
+        type=str,
+        default=DEFAULT_UCID_PREFIX,
+        help=(
+            f"Prefix for the auto-allocated UCID (default: {DEFAULT_UCID_PREFIX}). "
+            "Only used with --save-dir."
+        ),
+    )
     ap.add_argument(
         "--no-whisper",
         action="store_true",
@@ -48,8 +74,19 @@ def main() -> int:
 
     max_frames = min(args.max_frames, 100)
 
+    if args.save_dir and args.out_dir:
+        raise SystemExit("--save-dir and --out-dir are mutually exclusive")
+
+    # When --save-dir is set, we still download into a staging tmp dir
+    # first because the final folder name is built from metadata we only
+    # have after yt-dlp runs. The whole staging dir is then moved into
+    # place (atomic on the same filesystem) before any further processing.
+    save_dir = Path(args.save_dir).expanduser().resolve() if args.save_dir else None
+
     if args.out_dir:
         work = Path(args.out_dir).expanduser().resolve()
+    elif save_dir:
+        work = Path(tempfile.mkdtemp(prefix="watch-staging-"))
     else:
         work = Path(tempfile.mkdtemp(prefix="watch-"))
     work.mkdir(parents=True, exist_ok=True)
@@ -61,6 +98,35 @@ def main() -> int:
     )
     dl = download(args.source, work / "download")
     video_path = dl["video_path"]
+
+    if save_dir:
+        save_dir.mkdir(parents=True, exist_ok=True)
+        ucid = next_ucid(save_dir, prefix=args.ucid_prefix)
+        folder = build_save_dir_name(dl.get("info"), ucid=ucid)
+        target = save_dir / folder
+        if target.exists():
+            raise SystemExit(
+                f"--save-dir target already exists: {target}\n"
+                "Remove it first or pick a different --save-dir."
+            )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        old_work = work
+        shutil.move(str(work), str(target))
+        work = target
+        # Rewire any path that pointed inside the old staging dir.
+        def _relocate(p: str | None) -> str | None:
+            if not p:
+                return p
+            old = Path(p)
+            try:
+                rel = old.relative_to(old_work)
+            except ValueError:
+                return p
+            return str(work / rel)
+        dl["video_path"] = _relocate(dl["video_path"])
+        dl["subtitle_path"] = _relocate(dl.get("subtitle_path"))
+        video_path = dl["video_path"]
+        print(f"[watch] save-dir: {work}", file=sys.stderr)
 
     meta = get_metadata(video_path)
     full_duration = meta["duration_seconds"]
@@ -99,9 +165,11 @@ def main() -> int:
         work / "frames",
         fps=fps,
         resolution=args.resolution,
+        hires_resolution=args.hires_resolution,
         max_frames=max_frames,
         start_seconds=start_sec,
         end_seconds=end_sec,
+        hires_dir=work / "hires",
     )
 
     transcript_segments: list[dict] = []
@@ -178,7 +246,10 @@ def main() -> int:
         print(f"- **Resolution:** {meta['width']}x{meta['height']} ({meta.get('codec') or 'unknown codec'})")
     mode = "focused" if focused else "full"
     print(f"- **Frames:** {len(frames)} @ {fps:.3f} fps, {mode} mode (budget {target}, max {max_frames})")
-    print(f"- **Frame size:** {args.resolution}px wide")
+    print(
+        f"- **Frame size:** {args.resolution}px (Claude reads) · "
+        f"up to {args.hires_resolution}px (hi-res, for publication; capped at source width)"
+    )
     if transcript_segments:
         in_range = " in range" if focused else ""
         print(
@@ -202,15 +273,22 @@ def main() -> int:
     print()
     print("## Frames")
     print()
-    print(f"Frames live at: `{work / 'frames'}`")
+    print(f"Lo-res frames live at: `{work / 'frames'}`  ·  Hi-res copies at: `{work / 'hires'}`")
     print()
     print(
-        "**Read each frame path below with the Read tool to view the image.** "
-        "Frames are in chronological order; `t=MM:SS` is the absolute timestamp in the source video."
+        "**Read each lo-res frame path below with the Read tool to view the image.** "
+        "Frames are in chronological order; `t=MM:SS` is the absolute timestamp in the source video. "
+        "The `hi-res` path is the same moment at publication resolution — cite it instead of "
+        "the lo-res path whenever the user wants frames for the newsletter, blog, email, or any "
+        "embedded use outside this chat. Hi-res files are inside the working directory and will "
+        "be deleted at cleanup; copy them to a persistent location before that step."
     )
     print()
     for frame in frames:
-        print(f"- `{frame['path']}` (t={format_time(frame['timestamp_seconds'])})")
+        print(
+            f"- `{frame['path']}` · hi-res: `{frame['hires_path']}` "
+            f"(t={format_time(frame['timestamp_seconds'])})"
+        )
 
     print()
     print("## Transcript")

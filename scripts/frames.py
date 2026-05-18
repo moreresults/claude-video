@@ -16,6 +16,7 @@ from pathlib import Path
 
 
 MAX_FPS = 2.0
+DEFAULT_HIRES_RESOLUTION = 1600  # newsletter / publication frame width
 
 
 def _clamp_fps(fps: float, duration_seconds: float, max_frames: int) -> tuple[float, int]:
@@ -136,37 +137,59 @@ def extract(
     out_dir: Path,
     fps: float,
     resolution: int = 512,
+    hires_resolution: int = DEFAULT_HIRES_RESOLUTION,
     max_frames: int = 100,
     start_seconds: float | None = None,
     end_seconds: float | None = None,
+    hires_dir: Path | None = None,
 ) -> list[dict]:
     if shutil.which("ffmpeg") is None:
         raise SystemExit("ffmpeg is not installed. Install with: brew install ffmpeg")
 
+    if hires_dir is None:
+        hires_dir = out_dir.parent / "hires"
+
     out_dir.mkdir(parents=True, exist_ok=True)
+    hires_dir.mkdir(parents=True, exist_ok=True)
     for existing in out_dir.glob("frame_*.jpg"):
         existing.unlink()
+    for existing in hires_dir.glob("frame_*.jpg"):
+        existing.unlink()
 
-    output_pattern = str(out_dir / "frame_%04d.jpg")
+    lo_pattern = str(out_dir / "frame_%04d.jpg")
+    hi_pattern = str(hires_dir / "frame_%04d.jpg")
+
+    # Build the filter graph. trim happens BEFORE fps and split so both
+    # outputs are guaranteed to receive identical frames at identical
+    # indices. setpts=PTS-STARTPTS resets timestamps to 0 after trim so
+    # the downstream fps filter sees a clean 0-based stream.
+    #
+    # scale='min(W,iw)':-2 caps the output width at W without ever
+    # upscaling a smaller source — a 1280px-wide 720p input asked for
+    # 1600px hi-res will stay at 1280px rather than balloon to a soft
+    # 1600px.
+    trim_args = []
+    if start_seconds is not None:
+        trim_args.append(f"start={start_seconds:.3f}")
+    if end_seconds is not None:
+        trim_args.append(f"end={end_seconds:.3f}")
+    trim_stage = f"trim={':'.join(trim_args)},setpts=PTS-STARTPTS," if trim_args else ""
+
+    filter_graph = (
+        f"[0:v]{trim_stage}fps={fps},split=2[lo_src][hi_src];"
+        f"[lo_src]scale='min({resolution},iw)':-2[lo];"
+        f"[hi_src]scale='min({hires_resolution},iw)':-2[hi]"
+    )
+
     cmd: list[str] = [
         "ffmpeg",
         "-hide_banner",
         "-loglevel", "error",
         "-y",
-    ]
-
-    # -ss before -i = fast seek (keyframe-snap, good enough for preview frames).
-    if start_seconds is not None:
-        cmd += ["-ss", f"{start_seconds:.3f}"]
-    if end_seconds is not None:
-        cmd += ["-to", f"{end_seconds:.3f}"]
-
-    cmd += [
         "-i", str(Path(video_path).resolve()),
-        "-vf", f"fps={fps},scale={resolution}:-2",
-        "-frames:v", str(max_frames),
-        "-q:v", "4",
-        output_pattern,
+        "-filter_complex", filter_graph,
+        "-map", "[lo]", "-frames:v", str(max_frames), "-q:v", "4", lo_pattern,
+        "-map", "[hi]", "-frames:v", str(max_frames), "-q:v", "2", hi_pattern,
     ]
 
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -174,14 +197,26 @@ def extract(
         raise SystemExit(f"ffmpeg frame extraction failed: {result.stderr.strip()}")
 
     offset = start_seconds or 0.0
-    frames = sorted(out_dir.glob("frame_*.jpg"))
+    lo_frames = sorted(out_dir.glob("frame_*.jpg"))
+    hi_frames = sorted(hires_dir.glob("frame_*.jpg"))
+
+    # Hard invariant: both encoders share one decode pass via split=2 inside
+    # the filter graph. If counts diverge, the graph has been altered and
+    # the index → moment mapping is no longer trustworthy. Fail loudly.
+    if len(lo_frames) != len(hi_frames):
+        raise SystemExit(
+            f"frame count mismatch: {len(lo_frames)} lo vs {len(hi_frames)} hi — "
+            "filter graph altered or ffmpeg behaviour is off"
+        )
+
     return [
         {
             "index": i,
             "timestamp_seconds": round(offset + (i / fps if fps > 0 else 0.0), 2),
-            "path": str(p),
+            "path": str(lo_p),
+            "hires_path": str(hi_p),
         }
-        for i, p in enumerate(frames)
+        for i, (lo_p, hi_p) in enumerate(zip(lo_frames, hi_frames))
     ]
 
 
@@ -200,6 +235,7 @@ if __name__ == "__main__":
 
     fps_override = None
     resolution = 512
+    hires_resolution = DEFAULT_HIRES_RESOLUTION
     max_frames = 100
     start_arg = None
     end_arg = None
@@ -209,6 +245,8 @@ if __name__ == "__main__":
             fps_override = float(args[i + 1]); i += 2
         elif args[i] == "--resolution":
             resolution = int(args[i + 1]); i += 2
+        elif args[i] == "--hires-resolution":
+            hires_resolution = int(args[i + 1]); i += 2
         elif args[i] == "--max-frames":
             max_frames = int(args[i + 1]); i += 2
         elif args[i] == "--start":
@@ -240,11 +278,14 @@ if __name__ == "__main__":
         video, out,
         fps=fps,
         resolution=resolution,
+        hires_resolution=hires_resolution,
         max_frames=max_frames,
         start_seconds=start_sec,
         end_seconds=end_sec,
     )
     print(json.dumps(
-        {"meta": meta, "fps": fps, "target": target, "focused": focused, "frames": frames},
+        {"meta": meta, "fps": fps, "target": target, "focused": focused,
+         "resolution": resolution, "hires_resolution": hires_resolution,
+         "frames": frames},
         indent=2,
     ))
