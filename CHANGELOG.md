@@ -2,6 +2,16 @@
 
 All notable changes to `/watch` are documented here.
 
+## [0.1.5] — 2026-05-18
+
+### Added
+- Step 4.5: UCID folder allocation, `--save-dir` flag, renderer hand-off.
+
+## [0.1.4] — 2026-05-18
+
+### Changed
+- Forked to `moreresults/claude-video`.
+
 ## [0.1.3] — 2026-05-09
 
 ### Fixed
