@@ -279,6 +279,19 @@ Constructions: engagement-bait questions ("Are you ready to…?"), empty triads 
 - Code formatting for commands, flags, file paths, env vars, CLI snippets. Product/tool names plain.
 - Italics: single-word emphasis, inline short quotes. Max one blockquote pull-quote per article.
 
+### Draft the article with james-watson-copywriter
+
+Invoke the `james-watson-copywriter` skill in **Mode A — fresh write** to draft the full article body.
+
+The MOR-950 render order (sections 1–10), word count (700–2,000), frame placement, and structural rules take precedence over any format defaults in the copywriter skill. Apply the skill's voice rules, kill list, and mandatory Final Pass (specificity audit → rate >9 → three final questions) to all prose sections.
+
+Additional constraints that override the copywriter skill's defaults:
+
+- **Third-person only.** MOR-950 voice is third-person analytical observer; the copywriter's "direct second-person / always you" does not apply here.
+- **British English in paraphrase.** The copywriter skill defaults to the author's register; here British English is mandatory except inside direct quotes.
+- **No exclamation marks.** MOR-950 hard rule; the copywriter's "confrontational closings" must be recast without them.
+- **Source fidelity (MOR-938) overrides specificity rules.** Never invent steps, numbers, or outcomes. Every specific must be sourced from the video transcript or metadata — not from the copywriter's preference for sharp claims.
+
 ### Pre-render QA — run before invoking the renderer
 
 Run every check. Fix in place if any fails. Do not call the renderer until clean.
