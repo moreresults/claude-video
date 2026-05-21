@@ -16,8 +16,8 @@ user-invocable: true
 You don't have a video input; this skill gives you one. A Python script downloads the video, extracts frames as JPEGs, gets a timestamped transcript (native captions first, then Whisper API as fallback), and prints frame paths. You then `Read` each frame path to see the images and combine them with the transcript to answer the user.
 
 > **Companion docs**
-> - `REFERENCE.md` (v1.2) — quick reference: all flags, frame budgets, step summaries, Step 4.5 render order, QA checklist
-> - `SKILL_BUILD_INFRA.md` (v1.3) — how to update and distribute this skill across surfaces (Claude Code, claude.ai, Codex)
+> - `REFERENCE.md` — quick reference: all flags, frame budgets, step summaries, Step 4.5 render order, QA checklist
+> - `SKILL_BUILD_INFRA.md` — how to update and distribute this skill across surfaces (Claude Code, claude.ai, Codex)
 
 ## Step 0 — Setup preflight (runs every `/watch` invocation, silent on success)
 
