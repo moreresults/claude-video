@@ -3,9 +3,9 @@ name: watch
 description: Watch a video (URL or local path). Downloads with yt-dlp, extracts auto-scaled frames with ffmpeg, pulls the transcript from captions (or Whisper API fallback), writes a clean transcript.md, and hands the result to Claude so it can answer questions about what's in the video.
 argument-hint: "<video-url-or-path> [question]"
 allowed-tools: Bash, Read, AskUserQuestion
-homepage: https://github.com/bradautomates/claude-video
-repository: https://github.com/bradautomates/claude-video
-author: bradautomates
+homepage: https://github.com/moreresults/claude-video
+repository: https://github.com/moreresults/claude-video
+author: moreresults
 license: MIT
 user-invocable: true
 ---
@@ -178,7 +178,13 @@ and proceed to Step 5.
 
 ### Produces
 
-Three files in the UCID folder: `business-article.md`, `business-article.docx`, `business-article.pdf`.
+Three files in a `business assets/` subfolder inside the UCID folder: `business-article.md`, `business-article.docx`, `business-article.pdf`. The `.md` is **post-humanizer**; the `.docx` and `.pdf` are rendered from it, so all three carry the humanized prose.
+
+Create the subfolder before writing anything:
+
+```bash
+mkdir -p "<UCID-folder>/business assets"
+```
 
 ### Author against the MOR-950 style guide
 
@@ -292,7 +298,23 @@ Run every check. Fix in place if any fails. Do not call the renderer until clean
 
 ### Write the file
 
-Write the validated article to `<UCID-folder>/business-article.md`.
+Write the validated article to `<UCID-folder>/business assets/business-article.md`.
+
+### Humanize the prose — mandatory, every run
+
+Invoke the `humanizer` skill on `<UCID-folder>/business assets/business-article.md` and overwrite the file in place with the humanized output. This pass is **not optional** and applies to every run — there is no opt-out, no "skip if short", no "skip if voice already feels human". The renderer must operate on the humanized `.md`, so this step runs **before** `md_to_docx.js` / `md_to_pdf.js`.
+
+The humanizer strips the AI-writing tells the style guide alone does not catch: em-dash overuse, inflated symbolism, vague attributions, rule-of-three, "It is not X. It is Y." reframe spam, AI vocabulary, negative parallelisms, filler phrases.
+
+Constraints when applying:
+
+- Preserve every `![caption](path)` image embed verbatim — paths, captions, and order.
+- Preserve every blockquote, including the source-attribution blockquote at the top and any direct quotes from the creator. Direct quotes are source material and must not be reworded.
+- Preserve all numbers, tool names, and creator attributions — these are MOR-938 source-fidelity constraints and override the humanizer's stylistic preferences.
+- Preserve heading hierarchy (H1/H2/H3) and the MOR-950 render order.
+- The MOR-950 voice constraints (third-person, British English, no first person, no exclamation marks, contractions only in headings/quotes) still apply after humanization. If the humanizer's output violates any, re-fix in place.
+
+After the pass, re-run the pre-render QA checklist on the humanized file. The em-dash, reframe-count, and forbidden-word checks are the ones most likely to shift; fix in place if anything regressed.
 
 ### Invoke the renderer
 
@@ -300,27 +322,43 @@ Both commands. `npm root -g` resolves the global node_modules path so `require("
 
 ```bash
 NODE_PATH=$(npm root -g) node ~/.claude/skills/markdown-to-apple-deliverable/scripts/md_to_docx.js \
-  "<UCID-folder>/business-article.md" --out "<UCID-folder>/"
+  "<UCID-folder>/business assets/business-article.md" --out "<UCID-folder>/business assets/"
 
 NODE_PATH=$(npm root -g) node ~/.claude/skills/markdown-to-apple-deliverable/scripts/md_to_pdf.js \
-  "<UCID-folder>/business-article.md" --out "<UCID-folder>/"
+  "<UCID-folder>/business assets/business-article.md" --out "<UCID-folder>/business assets/"
 ```
 
 Each prints `OK business-article` on success or `ERR business-article — <reason>` on failure.
 
-### Verify outputs
+### Verify outputs and clear the sentinel
 
 ```bash
-ls -la "<UCID-folder>/business-article".{md,docx,pdf}
+ls -la "<UCID-folder>/business assets/business-article".{md,docx,pdf}
 ```
 
 If any are missing, surface the renderer error to the user. Leave the `.md` in place — it can be re-rendered manually.
+
+Once all three (`.md`, `.docx`, `.pdf`) exist, **delete the sentinel file** the watch script writes when `--save-dir` is used:
+
+```bash
+rm -f "<UCID-folder>/business-article.REQUIRED"
+```
+
+The sentinel exists specifically so batch runs that bypass this Skill (e.g. calling `scripts/watch.py` directly via Bash) leave a visible on-disk flag for unfinished Step 4.5 work. To audit the entire output tree for missing articles:
+
+```bash
+find <save-dir> -name 'business-article.REQUIRED'
+```
+
+Empty output means every UCID folder is complete. Any path printed needs Step 4.5 re-run.
 
 ### Failure modes
 
 | failure | action |
 | -- | -- |
 | Pre-render QA check fails | Fix in place, recheck, do not invoke renderer until clean |
+| Humanizer pass skipped or unavailable | Do not invoke renderer. Resolve the skill availability and re-run the pass — the renderer must operate on humanized prose. |
+| Humanizer regressed an MOR-950 voice rule (first person, exclamation mark, American spelling in paraphrase, etc.) | Fix in place on the humanized `.md`, re-run pre-render QA, then invoke renderer. |
 | Renderer prints `ERR` | Surface error to user. Leave `.md` in place. Do not retry automatically. |
 | Chrome missing at default path | `md_to_pdf.js` fails. Tell user: override with `CHROME_BIN=/path/to/chrome`. |
 | `docx` package not installed globally | `md_to_docx.js` fails with module-not-found. Tell user: `npm install -g docx`. |
@@ -329,7 +367,7 @@ If any are missing, surface the renderer error to the user. Leave the `.md` in p
 
 After successful render:
 
-> Wrote `business-article.md`, `business-article.docx`, and `business-article.pdf` to `<UCID-folder>/`. Skim the `.md` to check voice and structure; re-run only the renderer if you edit it.
+> Wrote `business-article.md`, `business-article.docx`, and `business-article.pdf` to `<UCID-folder>/business assets/`. Skim the `.md` to check voice and structure; re-run only the renderer if you edit it.
 
 **Step 5 — clean up.** The script prints a working directory at the end. **Before deleting it, check whether the user wants any hi-res frames for publication** — those live at `<work>/hires/frame_NNNN.jpg` and will be lost with the rest of the working dir. If the user has flagged frames for the newsletter, blog, or any external use, prompt them to copy the relevant `hires/*.jpg` files to a persistent location first, or do it for them. Then, if there are no expected follow-ups, delete the working dir with `rm -rf <dir>`. If follow-ups are likely, leave it in place.
 
