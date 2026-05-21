@@ -8,17 +8,30 @@
 
 ## Saving output
 
-Pass `--save-dir` to keep all assets in a named folder. The folder name is built automatically from the video metadata:
+Pass `--save-dir` to keep all assets in a named folder. The folder name is auto-generated as:
 
 ```
-YYYY-MM-DD Channel Name - Video Title
+UCID YYYY-MM-DD Short Title
 ```
 
+- **UCID** — auto-allocated unique content ID, e.g. `UCID-0001`. The script scans `--save-dir` for existing `UCID-NNNN*` subfolders, picks the highest `N`, and increments. Override the prefix with `--ucid-prefix XYZ` if you want a different namespace (each prefix has its own counter).
+- **YYYY-MM-DD** — the video's publish date from yt-dlp metadata (`upload_date`), falling back to today's date.
+- **Short Title** — sanitised and truncated to ~40 chars at a word boundary. Parentheses, ampersands, smart quotes, apostrophes, exclamation marks, shell metacharacters, and any chars unsafe across POSIX/Windows filesystems are stripped. This is deliberate: earlier output folders that contained these characters silently broke the markdown-to-apple PDF/DOCX pipeline (the image-path regex misparses on `)`, and Chrome's `file://` parsing misparses on `&` / `#` / `?`).
+
 ```
-/watch https://youtu.be/abc --save-dir ~/Videos/watched summarize this
+/watch https://youtu.be/abc --save-dir outputs/ summarize this
 ```
 
-→ creates `~/Videos/watched/2026-05-16 Simon Scrapes - Every Claude Code Memory System Compared/`
+→ creates `outputs/UCID-0014 2026-05-16 Every Claude Code Memory System/` (or whatever the next UCID is).
+
+Example sanitisation:
+
+|raw metadata|folder name|
+|-|-|
+|`Brad AI & Automation` / `My Claude Code Can INSTANTLY Watch Any Video (Here's How)`|`UCID-0001 2026-04-29 My Claude Code Can INSTANTLY Watch Any`|
+|`Simon Scrapes` / `Skill Chaining in Claude OS is INSANE (Don't Fall Behind!)`|`UCID-0002 2026-05-14 Skill Chaining in Claude OS is INSANE`|
+
+The rules live in `scripts/safe_name.py`. If the target subfolder already exists, the script refuses to overwrite — remove the old folder or pick a different `--save-dir`. The full untruncated title is preserved inside `download/video.info.json` and the generated `transcript.md`/`business-article.md`, so nothing is lost.
 
 If you omit `--save-dir`, Claude will ask you where to save before running. Choose a path or pick "skip" to use a temp dir (cleaned up after).
 
@@ -60,7 +73,8 @@ Use `--start` / `--end` to zoom in. Frame rate is denser in focused mode.
 
 | Flag | Default | Purpose |
 |-|-|-|
-| `--save-dir DIR` | — | Base dir; auto-names subfolder from metadata |
+| `--save-dir DIR` | — | Base dir; auto-names subfolder `UCID YYYY-MM-DD Short Title` |
+| `--ucid-prefix XYZ` | `UCID` | Override the UCID prefix; only used with `--save-dir` |
 | `--out-dir DIR` | temp | Use this exact directory (no naming logic) |
 | `--start T` | — | Range start (`SS`, `MM:SS`, or `HH:MM:SS`) |
 | `--end T` | — | Range end |

@@ -128,6 +128,27 @@ def main() -> int:
         video_path = dl["video_path"]
         print(f"[watch] save-dir: {work}", file=sys.stderr)
 
+        # Sentinel for Step 4.5 (humanized business article + docx + pdf render).
+        # The script only runs Steps 0-4; Step 4.5 lives in the /watch Skill and
+        # is silently skipped when the script is invoked directly via Bash.
+        # The Skill (or any post-processor) must delete this file once
+        # business-article.{md,docx,pdf} have all been produced.
+        sentinel = work / "business-article.REQUIRED"
+        sentinel.write_text(
+            "Step 4.5 of the /watch pipeline (humanized business article + docx + pdf)\n"
+            "has not been completed for this UCID folder.\n"
+            "\n"
+            "Authoring this article is part of the /watch Skill (SKILL.md, Step 4.5),\n"
+            "not the watch.py script. If you reached this folder via a batch that\n"
+            "called watch.py directly through Bash, you bypassed Step 4.5 — re-run\n"
+            "the Skill against the source URL, or author the article manually per\n"
+            "MOR-950 and render via markdown-to-apple-deliverable.\n"
+            "\n"
+            "Delete this file once business-article.{md,docx,pdf} are all present.\n",
+            encoding="utf-8",
+        )
+        print(f"[watch] wrote sentinel: {sentinel.name}", file=sys.stderr)
+
     meta = get_metadata(video_path)
     full_duration = meta["duration_seconds"]
 

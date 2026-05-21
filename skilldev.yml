@@ -1,0 +1,14 @@
+# skilldev.yml — config for /skilldev to live-link this skill's runtime cache.
+# See ~/.claude/skills/skilldev/SKILL.md for usage.
+skill_name: watch
+repo: /Users/jameswatson/Dropbox/GIT/claude-video
+cache_glob: ~/Library/Application Support/Claude/local-agent-mode-sessions/skills-plugin/*/*/skills/{skill_name}
+required_files:
+  - SKILL.md
+  - scripts/watch.py
+  - scripts/download.py
+  - scripts/safe_name.py
+  - scripts/frames.py
+linked_paths:
+  - SKILL.md
+  - scripts

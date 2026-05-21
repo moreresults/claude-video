@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "file=\"$CLAUDE_TOOL_INPUT_file_path\"; [[ \"$file\" == *.py ]] && ruff format \"$file\" 2>/dev/null; exit 0"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "file=\"$CLAUDE_TOOL_INPUT_file_path\"; if [[ \"$file\" == *\".config/watch/.env\"* ]]; then echo \"Blocked: editing ~/.config/watch/.env is not allowed (API keys)\"; exit 2; fi; exit 0"
+          }
+        ]
+      }
+    ]
+  }
+}

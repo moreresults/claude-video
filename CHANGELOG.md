@@ -2,6 +2,11 @@
 
 All notable changes to `/watch` are documented here.
 
+## [0.1.6] — 2026-05-19
+
+### Added
+- Step 4.5 now mandates a `/humanizer` pass on `business-article.md` between the initial write and the docx/PDF render. Applies to every run, with no opt-out. Documented constraints for preserving image embeds, blockquotes, numbers, tool names, creator attributions, and MOR-950 voice rules across the pass.
+
 ## [0.1.5] — 2026-05-18
 
 ### Added
